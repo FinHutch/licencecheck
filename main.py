@@ -6,6 +6,24 @@ from datetime import datetime, timedelta
 import uuid
 import os
 import logging
+import boto3
+from botocore.client import Config
+
+R2_ENDPOINT = "https://b16fe0cbd4f60d167a90c1c73c4f9697.r2.cloudflarestorage.com"
+R2_BUCKET = "newtoncheat"
+
+AWS_ACCESS_KEY = os.environ.get("R2_ACCESS_KEY")
+AWS_SECRET_KEY = os.environ.get("R2_SECRET_KEY")
+
+s3 = boto3.client(
+    's3',
+    endpoint_url=R2_ENDPOINT,
+    aws_access_key_id=AWS_ACCESS_KEY,
+    aws_secret_access_key=AWS_SECRET_KEY,
+    config=Config(signature_version='s3v4'),
+    region_name='auto'
+)
+
 
 # -------------------- Config --------------------
 
@@ -134,6 +152,37 @@ def list_licences():
             "activated": l.activated
         } for l in licences
     ])
+
+
+@app.route("/get_link/<path:filename>", methods=["GET"])
+@limiter.limit("30 per minute")
+def get_link(filename):
+    # ✅ Licence check
+    code = request.args.get("licence_code")
+    hwid = request.args.get("hwid")
+
+    licence = Licence.query.get(code)
+    if not licence:
+        return jsonify({"msg": "Licence not found"}), 404
+
+    if not licence.activated or licence.hwid != hwid:
+        return jsonify({"msg": "HWID mismatch or licence not activated"}), 403
+
+    if datetime.utcnow() > licence.expiry:
+        return jsonify({"msg": "Licence expired."}), 403
+
+    # ✅ Generate the signed R2 link
+    try:
+        url = s3.generate_presigned_url(
+            'get_object',
+            Params={'Bucket': R2_BUCKET, 'Key': filename},
+            ExpiresIn=120
+        )
+    except Exception as e:
+        return jsonify({"msg": f"Error generating download link: {str(e)}"}), 500
+
+    return jsonify({"url": url})
+
 
 # -------------------- Run Server --------------------
 
