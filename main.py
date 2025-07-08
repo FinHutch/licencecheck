@@ -154,19 +154,17 @@ def list_licences():
     ])
 
 
-@app.route("/get_link/<path:filename>", methods=["GET"])
+@app.route("/get_link_hwid/<path:filename>", methods=["GET"])
 @limiter.limit("30 per minute")
-def get_link(filename):
-    # ✅ Licence check
-    code = request.args.get("licence_code")
+def get_link_hwid(filename):
     hwid = request.args.get("hwid")
 
-    licence = Licence.query.get(code)
-    if not licence:
-        return jsonify({"msg": "Licence not found"}), 404
+    if not hwid:
+        return jsonify({"msg": "Missing HWID"}), 400
 
-    if not licence.activated or licence.hwid != hwid:
-        return jsonify({"msg": "HWID mismatch or licence not activated"}), 403
+    licence = Licence.query.filter_by(hwid=hwid).first()
+    if not licence:
+        return jsonify({"msg": "HWID not activated."}), 404
 
     if datetime.utcnow() > licence.expiry:
         return jsonify({"msg": "Licence expired."}), 403
