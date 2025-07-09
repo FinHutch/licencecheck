@@ -60,12 +60,24 @@ def require_admin():
 # -------------------- Routes --------------------
 
 @app.route("/generate_code", methods=["POST"])
+@limiter.limit("30 per minute")
 def generate_code():
     if not require_admin():
         return jsonify({"msg": "Unauthorized"}), 401
 
+    data = request.get_json() or {}
+    days_valid = data.get("days_valid", 30)  # Default to 30 days if not provided
+
+    try:
+        days_valid = int(days_valid)
+    except ValueError:
+        return jsonify({"msg": "Invalid days_valid parameter"}), 400
+
+    if days_valid <= 0:
+        return jsonify({"msg": "days_valid must be positive"}), 400
+
     licence_code = str(uuid.uuid4()).split("-")[0].upper()
-    expiry = datetime.utcnow() + timedelta(days=30)
+    expiry = datetime.utcnow() + timedelta(days=days_valid)
 
     new_licence = Licence(licence_code=licence_code, expiry=expiry)
     db.session.add(new_licence)
